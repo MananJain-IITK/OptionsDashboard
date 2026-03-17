@@ -93,7 +93,7 @@
         <div class="form-group">
           <label>Index</label>
           <select id="gIndex">
-            {% for idx in indices %}<option value="{{ idx }}" {% if idx == index %}selected{% endif %}>{{ idx }}</option>{% endfor %}
+            <option value="NIFTY50" selected>NIFTY50 (Local Data)</option>
           </select>
         </div>
         <div class="form-group">
@@ -114,8 +114,12 @@
           <input type="text" id="gExpiry" value="{{ expiry }}">
         </div>
         <div class="form-group">
-          <label>Risk-Free Rate (%)</label>
-          <input type="number" id="gRate" value="6.5" step="0.1" min="0" max="20">
+          <label style="display:flex; justify-content:space-between; align-items:center;">
+            <span>Risk-Free Rate (%)</span>
+            <span id="rfrLiveBadge" style="font-size:0.55rem; color:var(--green); letter-spacing:0.08em;">⟳ fetching...</span>
+          </label>
+          <input type="number" id="gRate" value="6.5" step="0.01" min="0" max="20">
+          <div id="rfrMeta" style="font-size:0.6rem; color:var(--muted); font-family:'Space Mono',monospace; margin-top:0.35rem; line-height:1.6;"></div>
         </div>
         <button class="btn btn-primary btn-full" onclick="loadGreeks()">⚡ Calculate Greeks</button>
       </div>
@@ -143,7 +147,7 @@
           <div class="price-lbl">BLACK-SCHOLES THEORETICAL PRICE</div>
           <div class="price-val" id="bsPrice">—</div>
           <div style="font-size:0.65rem; color:var(--muted); font-family:'Space Mono',monospace; margin-top:0.3rem;">
-            Market: <span id="mktPrice">—</span> &nbsp;|&nbsp; Spot: <span id="spotLbl">—</span> &nbsp;|&nbsp; IV (yf): <span id="ivYf">—</span>
+            Market: <span id="mktPrice">—</span> &nbsp;|&nbsp; Spot: <span id="spotLbl">—</span> &nbsp;|&nbsp; IV (computed): <span id="ivYf">—</span>
           </div>
         </div>
 
@@ -237,7 +241,7 @@ function renderGreeks(d) {
   document.getElementById('bsPrice').textContent = g.price != null ? '₹' + g.price.toFixed(2) : '—';
   document.getElementById('mktPrice').textContent = d.market_price != null ? '₹' + d.market_price.toFixed(2) : '—';
   document.getElementById('spotLbl').textContent  = d.spot != null ? '₹' + d.spot.toLocaleString('en-IN') : '—';
-  document.getElementById('ivYf').textContent    = d.iv_yf != null ? d.iv_yf + '%' : '—';
+  document.getElementById('ivYf').textContent    = d.iv_computed != null ? d.iv_computed + '%' : '—';
 
   document.getElementById('gDelta').textContent = g.delta != null ? g.delta.toFixed(4) : '—';
   document.getElementById('gGamma').textContent = g.gamma != null ? g.gamma.toFixed(6) : '—';
@@ -367,8 +371,47 @@ function showTab(name) {
   if (el && el.data) Plotly.relayout(el, {autosize: true});
 }
 
+// ── Live Risk-Free Rate ────────────────────────────────────────────────────
+async function fetchLiveRFR() {
+  try {
+    const res  = await fetch('/api/risk-free-rate/');
+    const data = await res.json();
+    document.getElementById('gRate').value = data.rate_pct.toFixed(4);
+    const badge = document.getElementById('rfrLiveBadge');
+    badge.textContent = '✓ LIVE 91D T-BILL';
+    badge.style.color = 'var(--green)';
+    const isFallback = data.source === 'fallback';
+    const srcLabel   = isFallback
+      ? '<span style="color:var(--gold)">⚠ fallback rate (no live fetch)</span>'
+      : '<span style="color:var(--green)">✓ fetched from RBI/FBIL</span>';
+    const cachedAt   = data.cached_at  ? `&nbsp;·&nbsp;cached ${data.cached_at}` : '';
+    const nextAt     = data.next_refresh ? `&nbsp;·&nbsp;next refresh ${data.next_refresh}` : '';
+    document.getElementById('rfrMeta').innerHTML =
+      `${data.rate_pct.toFixed(4)}%&nbsp;&nbsp;${srcLabel}${cachedAt}${nextAt}
+       &nbsp;&nbsp;<a href="#" style="color:var(--accent);" onclick="event.preventDefault();bustRFRCache()">↺ force refresh</a>`;
+  } catch(e) {
+    document.getElementById('rfrLiveBadge').textContent = '⚠ offline';
+    document.getElementById('rfrLiveBadge').style.color = 'var(--red)';
+    document.getElementById('rfrMeta').textContent = 'Could not fetch live rate — using 6.5% default';
+  }
+}
+
+async function bustRFRCache() {
+  const badge = document.getElementById('rfrLiveBadge');
+  badge.textContent = '⟳ refreshing...';
+  badge.style.color = 'var(--muted)';
+  try {
+    await fetch('/api/risk-free-rate/?refresh=1');
+    await fetchLiveRFR();
+  } catch(e) {
+    badge.textContent = '⚠ refresh failed';
+    badge.style.color = 'var(--red)';
+  }
+}
+
 // Auto-load if params are present
 window.addEventListener('DOMContentLoaded', () => {
+  fetchLiveRFR();
   if ('{{ strike }}' && '{{ expiry }}') loadGreeks();
 });
 </script>

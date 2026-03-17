@@ -113,10 +113,18 @@
     <p class="hero-sub">Real-time options analytics — Greeks, IV Smile, Open Interest &amp; Market Sentiment in one terminal.</p>
   </div>
 
-  {% if not yfinance_available %}
-  <div class="alert alert-error" style="max-width:700px; margin:0 auto 2rem;">
-    ⚠ <strong>yfinance not installed.</strong> Run: <code>pip install yfinance plotly pandas numpy scipy</code>
-  </div>
+  {% if data_mode == 'local' %}
+    {% if data_ok %}
+    <div class="alert alert-success" style="max-width:700px; margin:0 auto 2rem;">
+      ✅ <strong>Local data mode.</strong> Reading from <code>12Dec-Nifty/12Dec-Nifty/</code> — December 2023 Nifty options loaded.
+    </div>
+    {% else %}
+    <div class="alert alert-error" style="max-width:700px; margin:0 auto 2rem;">
+      ⚠ <strong>Data folder not found.</strong> Expected folder at:
+      <code>{{ data_path }}</code><br>
+      Make sure <code>12Dec-Nifty/12Dec-Nifty/</code> is in the same directory as <code>manage.py</code>.
+    </div>
+    {% endif %}
   {% endif %}
 
   <div class="step-indicator" id="stepIndicator">
