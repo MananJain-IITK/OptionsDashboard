@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}OptionFlow — Professional Options Analytics{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Inter:wght@300;400;500;600&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+  <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+  <style>
+    :root {
+      --bg:       #05070d;
+      --surface:  #0b0f1a;
+      --card:     #0f1520;
+      --border:   #1a2235;
+      --accent:   #00d4ff;
+      --green:    #00ff88;
+      --red:      #ff4466;
+      --gold:     #ffd700;
+      --purple:   #a855f7;
+      --text:     #c8d8f0;
+      --muted:    #4a5568;
+      --glow:     rgba(0,212,255,0.15);
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+      font-size: 14px;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background:
+        radial-gradient(ellipse 80% 40% at 20% 10%, rgba(0,212,255,0.04) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 30% at 80% 80%, rgba(168,85,247,0.04) 0%, transparent 60%);
+      pointer-events: none; z-index: 0;
+    }
+
+    /* ── NAV ── */
+    nav {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(5,7,13,0.95);
+      border-bottom: 1px solid var(--border);
+      backdrop-filter: blur(12px);
+      padding: 0 2rem;
+      display: flex; align-items: center; gap: 2rem; height: 56px;
+    }
+    .nav-brand {
+      font-family: 'Orbitron', monospace;
+      font-size: 1rem; font-weight: 900;
+      color: var(--accent);
+      letter-spacing: 0.1em;
+      text-decoration: none;
+      display: flex; align-items: center; gap: 0.5rem;
+    }
+    .nav-brand::before {
+      content: '◈';
+      font-size: 1.2rem;
+      animation: pulse 2s ease-in-out infinite;
+    }
+    @keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.4 } }
+    .nav-status {
+      margin-left: auto;
+      display: flex; align-items: center; gap: 0.5rem;
+      font-family: 'Space Mono', monospace;
+      font-size: 0.7rem; color: var(--green);
+    }
+    .status-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--green);
+      animation: blink 1.5s ease-in-out infinite;
+    }
+    @keyframes blink { 0%,100% { opacity:1 } 50% { opacity:0.2 } }
+
+    /* ── MAIN LAYOUT ── */
+    main { position: relative; z-index: 1; }
+    .container { max-width: 1400px; margin: 0 auto; padding: 2rem; }
+
+    /* ── CARDS ── */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.5rem;
+      position: relative;
+      overflow: hidden;
+    }
+    .card::before {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0; height: 1px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+      opacity: 0.3;
+    }
+    .card-header {
+      display: flex; align-items: center; gap: 0.75rem;
+      margin-bottom: 1.25rem;
+      padding-bottom: 0.75rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .card-title {
+      font-family: 'Space Mono', monospace;
+      font-size: 0.75rem; font-weight: 700;
+      letter-spacing: 0.15em; text-transform: uppercase;
+      color: var(--accent);
+    }
+    .card-icon { font-size: 1rem; }
+
+    /* ── FORM CONTROLS ── */
+    .form-group { margin-bottom: 1.25rem; }
+    label {
+      display: block;
+      font-family: 'Space Mono', monospace;
+      font-size: 0.65rem; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--muted);
+      margin-bottom: 0.4rem;
+    }
+    select, input[type="number"], input[type="text"] {
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.6rem 0.85rem;
+      color: var(--text);
+      font-family: 'Space Mono', monospace;
+      font-size: 0.8rem;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      appearance: none;
+    }
+    select:focus, input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(0,212,255,0.12);
+    }
+    select option { background: var(--surface); }
+
+    /* ── BUTTONS ── */
+    .btn {
+      display: inline-flex; align-items: center; gap: 0.5rem;
+      padding: 0.65rem 1.5rem;
+      border-radius: 4px; border: none;
+      font-family: 'Space Mono', monospace;
+      font-size: 0.75rem; font-weight: 700; letter-spacing: 0.1em;
+      cursor: pointer; transition: all 0.2s; text-transform: uppercase;
+      text-decoration: none;
+    }
+    .btn-primary {
+      background: var(--accent); color: #000;
+    }
+    .btn-primary:hover {
+      background: #fff; box-shadow: 0 0 20px rgba(0,212,255,0.4);
+    }
+    .btn-outline {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+    .btn-outline:hover { border-color: var(--accent); color: var(--accent); }
+    .btn-full { width: 100%; justify-content: center; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* ── RADIO TOGGLE ── */
+    .toggle-group {
+      display: flex; gap: 0;
+      border: 1px solid var(--border);
+      border-radius: 4px; overflow: hidden;
+    }
+    .toggle-group input[type="radio"] { display: none; }
+    .toggle-group label {
+      flex: 1; text-align: center;
+      padding: 0.6rem 1rem;
+      cursor: pointer; margin: 0;
+      font-family: 'Space Mono', monospace;
+      font-size: 0.72rem; font-weight: 700;
+      letter-spacing: 0.1em; text-transform: uppercase;
+      color: var(--muted);
+      background: var(--surface);
+      transition: all 0.2s;
+      border: none;
+    }
+    .toggle-group input[type="radio"]:checked + label {
+      background: var(--accent); color: #000;
+    }
+
+    /* ── STAT BADGES ── */
+    .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 0.75rem; }
+    .stat-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px; padding: 0.85rem;
+      text-align: center;
+    }
+    .stat-label {
+      font-family: 'Space Mono', monospace;
+      font-size: 0.6rem; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--muted);
+      margin-bottom: 0.35rem;
+    }
+    .stat-value {
+      font-family: 'Orbitron', monospace;
+      font-size: 1rem; font-weight: 700; color: var(--accent);
+    }
+    .stat-value.green { color: var(--green); }
+    .stat-value.red { color: var(--red); }
+    .stat-value.gold { color: var(--gold); }
+    .stat-value.purple { color: var(--purple); }
+
+    /* ── BADGES ── */
+    .badge {
+      display: inline-block; padding: 0.2rem 0.6rem;
+      border-radius: 3px; font-family: 'Space Mono', monospace;
+      font-size: 0.6rem; font-weight: 700; letter-spacing: 0.1em;
+    }
+    .badge-call { background: rgba(0,255,136,0.15); color: var(--green); border: 1px solid rgba(0,255,136,0.3); }
+    .badge-put  { background: rgba(255,68,102,0.15); color: var(--red);   border: 1px solid rgba(255,68,102,0.3); }
+    .badge-itm  { background: rgba(255,215,0,0.15);  color: var(--gold);  border: 1px solid rgba(255,215,0,0.3); }
+    .badge-otm  { background: rgba(74,85,104,0.3);   color: var(--muted); border: 1px solid var(--border); }
+
+    /* ── LOADER ── */
+    .loader {
+      display: flex; align-items: center; justify-content: center;
+      gap: 0.5rem; padding: 3rem;
+      font-family: 'Space Mono', monospace; font-size: 0.75rem;
+      color: var(--muted);
+    }
+    .loader-spinner {
+      width: 16px; height: 16px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── SCROLLBAR ── */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    /* ── ALERT ── */
+    .alert {
+      padding: 0.85rem 1rem;
+      border-radius: 4px;
+      font-family: 'Space Mono', monospace;
+      font-size: 0.75rem;
+      border-left: 3px solid;
+    }
+    .alert-error  { background: rgba(255,68,102,0.1);  border-color: var(--red);   color: var(--red); }
+    .alert-info   { background: rgba(0,212,255,0.08);  border-color: var(--accent); color: var(--accent); }
+    .alert-success{ background: rgba(0,255,136,0.08);  border-color: var(--green);  color: var(--green); }
+
+    /* ── TABLE ── */
+    .data-table { width: 100%; border-collapse: collapse; }
+    .data-table th {
+      font-family: 'Space Mono', monospace;
+      font-size: 0.62rem; letter-spacing: 0.12em; text-transform: uppercase;
+      color: var(--muted); padding: 0.5rem 0.75rem;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+    }
+    .data-table td {
+      padding: 0.6rem 0.75rem;
+      border-bottom: 1px solid rgba(26,34,53,0.5);
+      font-family: 'Space Mono', monospace;
+      font-size: 0.75rem;
+    }
+    .data-table tr:hover td { background: rgba(0,212,255,0.03); }
+
+    /* ── PLOTLY DARK OVERRIDES ── */
+    .plotly-graph-div { border-radius: 6px; }
+    .js-plotly-plot .plotly .modebar { background: transparent !important; }
+
+    /* ── SECTION HEADING ── */
+    .section-label {
+      font-family: 'Space Mono', monospace;
+      font-size: 0.62rem; letter-spacing: 0.2em;
+      text-transform: uppercase; color: var(--muted);
+      display: flex; align-items: center; gap: 0.5rem;
+    }
+    .section-label::after {
+      content: ''; flex: 1; height: 1px; background: var(--border);
+    }
+  </style>
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+  <nav>
+    <a href="/" class="nav-brand">OptionFlow</a>
+    <span style="color:var(--muted); font-size:0.7rem; font-family:'Space Mono',monospace;">NSE/BSE Options Analytics</span>
+    <div class="nav-status">
+      <div class="status-dot"></div>
+      <span>LIVE</span>
+    </div>
+  </nav>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+  <script>
+    const PLOTLY_CONFIG = {
+      responsive: true,
+      displayModeBar: true,
+      displaylogo: false,
+      modeBarButtonsToRemove: ['toImage','sendDataToCloud'],
+    };
+    const PLOTLY_LAYOUT_BASE = {
+      paper_bgcolor: 'transparent',
+      plot_bgcolor:  'rgba(11,15,26,0.8)',
+      font: { family: "'Space Mono', monospace", color: '#c8d8f0', size: 11 },
+      xaxis: { gridcolor: '#1a2235', linecolor: '#1a2235', zerolinecolor: '#1a2235' },
+      yaxis: { gridcolor: '#1a2235', linecolor: '#1a2235', zerolinecolor: '#1a2235' },
+      margin: { t: 40, b: 50, l: 60, r: 20 },
+    };
+  </script>
+  {% block extra_js %}{% endblock %}
+</body>
+</html>

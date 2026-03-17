@@ -1,0 +1,375 @@
+{% extends 'dashboard/base.html' %}
+{% block title %}OptionFlow — Greeks Calculator{% endblock %}
+
+{% block extra_head %}
+<style>
+  .page-header {
+    padding: 1.5rem 0 1rem;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 1.5rem;
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 0.75rem;
+  }
+  .page-title {
+    font-family: 'Orbitron', monospace;
+    font-size: 1.25rem; font-weight: 900; color: #fff;
+  }
+  .page-title span { color: var(--accent); }
+  .breadcrumb {
+    font-family: 'Space Mono', monospace; font-size: 0.65rem;
+    color: var(--muted); margin-bottom: 0.25rem;
+  }
+
+  .layout { display: grid; grid-template-columns: 300px 1fr; gap: 1.5rem; }
+  @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+
+  .greek-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px; padding: 1rem;
+    text-align: center;
+  }
+  .greek-name {
+    font-family: 'Orbitron', monospace; font-size: 0.7rem;
+    letter-spacing: 0.15em; color: var(--muted); margin-bottom: 0.3rem;
+  }
+  .greek-val {
+    font-family: 'Orbitron', monospace; font-size: 1.5rem; font-weight: 700;
+  }
+  .greek-sub { font-size: 0.62rem; color: var(--muted); margin-top: 0.2rem; font-family: 'Space Mono', monospace; }
+  .greeks-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.6rem; margin-bottom: 1rem; }
+  .price-highlight {
+    background: rgba(0,212,255,0.08);
+    border: 1px solid rgba(0,212,255,0.3);
+    border-radius: 6px; padding: 1rem;
+    text-align: center; margin-bottom: 1rem;
+  }
+  .price-lbl { font-family: 'Space Mono', monospace; font-size: 0.62rem; color: var(--muted); }
+  .price-val { font-family: 'Orbitron', monospace; font-size: 2rem; font-weight: 900; color: var(--accent); }
+
+  .chart-panel {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 8px; overflow: hidden; margin-bottom: 1.5rem;
+  }
+  .chart-tabs {
+    display: flex; border-bottom: 1px solid var(--border);
+  }
+  .chart-tab {
+    padding: 0.65rem 1.25rem;
+    font-family: 'Space Mono', monospace; font-size: 0.7rem;
+    cursor: pointer; color: var(--muted);
+    transition: all 0.2s; border: none; background: none;
+    border-bottom: 2px solid transparent;
+  }
+  .chart-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .chart-body { padding: 1rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+  <div class="page-header">
+    <div>
+      <div class="breadcrumb">
+        <a href="/" style="color:var(--muted); text-decoration:none;">Home</a>
+        › <a href="/analysis/?index={{ index }}&type={{ opt_type }}&strike={{ strike }}&expiry={{ expiry }}"
+             style="color:var(--muted); text-decoration:none;">Hub</a> › Greeks
+      </div>
+      <div class="page-title">Option <span>Greeks</span></div>
+    </div>
+    <a href="/analysis/?index={{ index }}&type={{ opt_type }}&strike={{ strike }}&expiry={{ expiry }}"
+       class="btn btn-outline">← Back to Hub</a>
+  </div>
+
+  <div class="layout">
+    <!-- LEFT: Controls + Params -->
+    <div>
+      <div class="card" style="margin-bottom:1.25rem;">
+        <div class="card-header">
+          <span class="card-icon">⚙️</span>
+          <span class="card-title">Parameters</span>
+        </div>
+
+        <div class="form-group">
+          <label>Index</label>
+          <select id="gIndex">
+            {% for idx in indices %}<option value="{{ idx }}" {% if idx == index %}selected{% endif %}>{{ idx }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Option Type</label>
+          <div class="toggle-group">
+            <input type="radio" name="gType" id="gCall" value="call" {% if opt_type == 'call' %}checked{% endif %}>
+            <label for="gCall">Call</label>
+            <input type="radio" name="gType" id="gPut" value="put" {% if opt_type == 'put' %}checked{% endif %}>
+            <label for="gPut">Put</label>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Strike</label>
+          <input type="number" id="gStrike" value="{{ strike }}" step="50">
+        </div>
+        <div class="form-group">
+          <label>Expiry (YYYY-MM-DD)</label>
+          <input type="text" id="gExpiry" value="{{ expiry }}">
+        </div>
+        <div class="form-group">
+          <label>Risk-Free Rate (%)</label>
+          <input type="number" id="gRate" value="6.5" step="0.1" min="0" max="20">
+        </div>
+        <button class="btn btn-primary btn-full" onclick="loadGreeks()">⚡ Calculate Greeks</button>
+      </div>
+
+      <!-- Market Data -->
+      <div class="card" id="marketCard" style="display:none;">
+        <div class="card-header">
+          <span class="card-icon">📡</span>
+          <span class="card-title">Market Data</span>
+        </div>
+        <div class="stat-grid" id="marketStats"></div>
+      </div>
+    </div>
+
+    <!-- RIGHT: Greeks + Charts -->
+    <div>
+      <div id="loadingGreeks" style="display:none;" class="loader">
+        <div class="loader-spinner"></div> Fetching options data &amp; computing Greeks…
+      </div>
+      <div id="errorGreeks" style="display:none;"></div>
+
+      <div id="greeksPanel" style="display:none;">
+        <!-- BS Price -->
+        <div class="price-highlight">
+          <div class="price-lbl">BLACK-SCHOLES THEORETICAL PRICE</div>
+          <div class="price-val" id="bsPrice">—</div>
+          <div style="font-size:0.65rem; color:var(--muted); font-family:'Space Mono',monospace; margin-top:0.3rem;">
+            Market: <span id="mktPrice">—</span> &nbsp;|&nbsp; Spot: <span id="spotLbl">—</span> &nbsp;|&nbsp; IV (yf): <span id="ivYf">—</span>
+          </div>
+        </div>
+
+        <!-- Greeks Grid -->
+        <div class="greeks-grid">
+          <div class="greek-card">
+            <div class="greek-name">Δ DELTA</div>
+            <div class="greek-val" id="gDelta" style="color:var(--accent);">—</div>
+            <div class="greek-sub">Price sensitivity</div>
+          </div>
+          <div class="greek-card">
+            <div class="greek-name">Γ GAMMA</div>
+            <div class="greek-val" id="gGamma" style="color:var(--gold);">—</div>
+            <div class="greek-sub">Delta rate of change</div>
+          </div>
+          <div class="greek-card">
+            <div class="greek-name">Θ THETA</div>
+            <div class="greek-val" id="gTheta" style="color:var(--red);">—</div>
+            <div class="greek-sub">Daily time decay</div>
+          </div>
+          <div class="greek-card">
+            <div class="greek-name">ν VEGA</div>
+            <div class="greek-val" id="gVega" style="color:var(--purple);">—</div>
+            <div class="greek-sub">Per 1% IV change</div>
+          </div>
+          <div class="greek-card">
+            <div class="greek-name">ρ RHO</div>
+            <div class="greek-val" id="gRho" style="color:var(--green);">—</div>
+            <div class="greek-sub">Per 1% rate change</div>
+          </div>
+          <div class="greek-card">
+            <div class="greek-name">DTE</div>
+            <div class="greek-val" id="gDTE" style="color:var(--text);">—</div>
+            <div class="greek-sub">Days to expiry</div>
+          </div>
+        </div>
+
+        <!-- Charts -->
+        <div class="chart-panel">
+          <div class="chart-tabs">
+            <button class="chart-tab active" onclick="showTab('delta')">Δ Delta</button>
+            <button class="chart-tab" onclick="showTab('gamma')">Γ Gamma</button>
+            <button class="chart-tab" onclick="showTab('theta')">Θ Theta</button>
+            <button class="chart-tab" onclick="showTab('pnl')">P&amp;L Profile</button>
+          </div>
+          <div class="chart-body">
+            <div id="chartDelta" style="height:320px;"></div>
+            <div id="chartGamma" style="height:320px; display:none;"></div>
+            <div id="chartTheta" style="height:320px; display:none;"></div>
+            <div id="chartPnl"   style="height:320px; display:none;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let greeksData = null;
+
+async function loadGreeks() {
+  const index  = document.getElementById('gIndex').value;
+  const type   = document.querySelector('input[name="gType"]:checked').value;
+  const strike = document.getElementById('gStrike').value;
+  const expiry = document.getElementById('gExpiry').value;
+  const rate   = parseFloat(document.getElementById('gRate').value) / 100;
+
+  document.getElementById('loadingGreeks').style.display = 'flex';
+  document.getElementById('greeksPanel').style.display = 'none';
+  document.getElementById('errorGreeks').style.display = 'none';
+
+  try {
+    const res  = await fetch(`/api/greeks-data/?index=${index}&type=${type}&strike=${strike}&expiry=${expiry}&r=${rate}`);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    greeksData = data;
+    renderGreeks(data);
+  } catch (e) {
+    document.getElementById('errorGreeks').innerHTML =
+      `<div class="alert alert-error">⚠ ${e.message}</div>`;
+    document.getElementById('errorGreeks').style.display = 'block';
+  } finally {
+    document.getElementById('loadingGreeks').style.display = 'none';
+  }
+}
+
+function renderGreeks(d) {
+  const g = d.greeks;
+  document.getElementById('bsPrice').textContent = g.price != null ? '₹' + g.price.toFixed(2) : '—';
+  document.getElementById('mktPrice').textContent = d.market_price != null ? '₹' + d.market_price.toFixed(2) : '—';
+  document.getElementById('spotLbl').textContent  = d.spot != null ? '₹' + d.spot.toLocaleString('en-IN') : '—';
+  document.getElementById('ivYf').textContent    = d.iv_yf != null ? d.iv_yf + '%' : '—';
+
+  document.getElementById('gDelta').textContent = g.delta != null ? g.delta.toFixed(4) : '—';
+  document.getElementById('gGamma').textContent = g.gamma != null ? g.gamma.toFixed(6) : '—';
+  document.getElementById('gTheta').textContent = g.theta != null ? g.theta.toFixed(4) : '—';
+  document.getElementById('gVega').textContent  = g.vega  != null ? g.vega.toFixed(4)  : '—';
+  document.getElementById('gRho').textContent   = g.rho   != null ? g.rho.toFixed(4)   : '—';
+  document.getElementById('gDTE').textContent   = d.T_days != null ? Math.round(d.T_days) + 'd' : '—';
+
+  // Market stats
+  document.getElementById('marketCard').style.display = 'block';
+  document.getElementById('marketStats').innerHTML = `
+    <div class="stat-box"><div class="stat-label">Open Int</div><div class="stat-value">${d.open_interest ? d.open_interest.toLocaleString() : '—'}</div></div>
+    <div class="stat-box"><div class="stat-label">Volume</div><div class="stat-value">${d.volume ? d.volume.toLocaleString() : '—'}</div></div>
+    <div class="stat-box"><div class="stat-label">Bid</div><div class="stat-value green">${d.bid ? '₹'+d.bid : '—'}</div></div>
+    <div class="stat-box"><div class="stat-label">Ask</div><div class="stat-value red">${d.ask ? '₹'+d.ask : '—'}</div></div>
+    <div class="stat-box"><div class="stat-label">BS IV</div><div class="stat-value gold">${d.bs_iv ? d.bs_iv+'%' : '—'}</div></div>
+  `;
+
+  // Plot charts
+  plotDelta(d);
+  plotGamma(d);
+  plotTheta(d);
+  plotPnL(d);
+
+  document.getElementById('greeksPanel').style.display = 'block';
+  showTab('delta');
+}
+
+function plotDelta(d) {
+  const layout = {
+    ...PLOTLY_LAYOUT_BASE,
+    title: { text: 'Delta vs Spot Price', font: {color:'#c8d8f0', size:13} },
+    xaxis: { ...PLOTLY_LAYOUT_BASE.xaxis, title: 'Spot Price' },
+    yaxis: { ...PLOTLY_LAYOUT_BASE.yaxis, title: 'Delta', range: [-1.05, 1.05] },
+  };
+  const traces = [
+    {
+      x: d.spot_range, y: d.delta_curve,
+      type: 'scatter', mode: 'lines',
+      line: { color: '#00d4ff', width: 2.5 },
+      name: 'Delta',
+    },
+    {
+      x: [d.spot, d.spot], y: [-1.05, 1.05],
+      type: 'scatter', mode: 'lines',
+      line: { color: '#00ff88', width: 1, dash: 'dot' },
+      name: 'Spot',
+    },
+    {
+      x: [d.strike, d.strike], y: [-1.05, 1.05],
+      type: 'scatter', mode: 'lines',
+      line: { color: '#ffd700', width: 1, dash: 'dash' },
+      name: 'Strike',
+    },
+  ];
+  Plotly.newPlot('chartDelta', traces, layout, PLOTLY_CONFIG);
+}
+
+function plotGamma(d) {
+  const layout = {
+    ...PLOTLY_LAYOUT_BASE,
+    title: { text: 'Gamma vs Spot Price', font: {color:'#c8d8f0', size:13} },
+    xaxis: { ...PLOTLY_LAYOUT_BASE.xaxis, title: 'Spot Price' },
+    yaxis: { ...PLOTLY_LAYOUT_BASE.yaxis, title: 'Gamma' },
+  };
+  Plotly.newPlot('chartGamma', [
+    { x: d.spot_range, y: d.gamma_curve, type: 'scatter', mode: 'lines',
+      line: { color: '#ffd700', width: 2.5 }, name: 'Gamma',
+      fill: 'tozeroy', fillcolor: 'rgba(255,215,0,0.06)' },
+    { x: [d.spot], y: [d.greeks.gamma], type: 'scatter', mode: 'markers',
+      marker: { color: '#00ff88', size: 10, symbol: 'diamond' }, name: 'Current' },
+  ], layout, PLOTLY_CONFIG);
+}
+
+function plotTheta(d) {
+  const layout = {
+    ...PLOTLY_LAYOUT_BASE,
+    title: { text: 'Theta (Daily Decay) vs Spot Price', font: {color:'#c8d8f0', size:13} },
+    xaxis: { ...PLOTLY_LAYOUT_BASE.xaxis, title: 'Spot Price' },
+    yaxis: { ...PLOTLY_LAYOUT_BASE.yaxis, title: 'Theta (₹/day)' },
+  };
+  Plotly.newPlot('chartTheta', [
+    { x: d.spot_range, y: d.theta_curve, type: 'scatter', mode: 'lines',
+      line: { color: '#ff4466', width: 2.5 }, name: 'Theta',
+      fill: 'tozeroy', fillcolor: 'rgba(255,68,102,0.06)' },
+  ], layout, PLOTLY_CONFIG);
+}
+
+function plotPnL(d) {
+  const premium = d.market_price || d.greeks.price || 0;
+  const type = document.querySelector('input[name="gType"]:checked').value;
+  const k = d.strike;
+  const pnl = d.spot_range.map(s => {
+    const intrinsic = type === 'call' ? Math.max(0, s - k) : Math.max(0, k - s);
+    return intrinsic - premium;
+  });
+  const colors = pnl.map(v => v >= 0 ? 'rgba(0,255,136,0.7)' : 'rgba(255,68,102,0.7)');
+  const layout = {
+    ...PLOTLY_LAYOUT_BASE,
+    title: { text: 'P&L at Expiry', font: {color:'#c8d8f0', size:13} },
+    xaxis: { ...PLOTLY_LAYOUT_BASE.xaxis, title: 'Spot at Expiry' },
+    yaxis: { ...PLOTLY_LAYOUT_BASE.yaxis, title: 'P&L (₹)' },
+    shapes: [{ type:'line', x0:d.spot_range[0], x1:d.spot_range[d.spot_range.length-1],
+                y0:0, y1:0, line:{color:'#4a5568', width:1} }],
+  };
+  Plotly.newPlot('chartPnl', [
+    { x: d.spot_range, y: pnl, type: 'scatter', mode: 'lines',
+      line: { color: '#00d4ff', width: 2 }, name: 'P&L',
+      fill: 'tozeroy',
+      fillcolor: 'rgba(0,212,255,0.06)' },
+    { x: [d.spot, d.spot], y: [Math.min(...pnl), Math.max(...pnl)],
+      type: 'scatter', mode: 'lines',
+      line: {color:'#00ff88', width:1, dash:'dot'}, name: 'Spot' },
+  ], layout, PLOTLY_CONFIG);
+}
+
+function showTab(name) {
+  ['delta','gamma','theta','pnl'].forEach(t => {
+    document.getElementById('chart' + t.charAt(0).toUpperCase() + t.slice(1)).style.display = 'none';
+  });
+  document.getElementById('chart' + name.charAt(0).toUpperCase() + name.slice(1)).style.display = 'block';
+  document.querySelectorAll('.chart-tab').forEach((b,i) => {
+    b.classList.toggle('active', ['delta','gamma','theta','pnl'][i] === name);
+  });
+  // Resize plotly
+  const el = document.getElementById('chart' + name.charAt(0).toUpperCase() + name.slice(1));
+  if (el && el.data) Plotly.relayout(el, {autosize: true});
+}
+
+// Auto-load if params are present
+window.addEventListener('DOMContentLoaded', () => {
+  if ('{{ strike }}' && '{{ expiry }}') loadGreeks();
+});
+</script>
+{% endblock %}

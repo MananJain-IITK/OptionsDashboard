@@ -1,0 +1,327 @@
+{% extends 'dashboard/base.html' %}
+{% block title %}OptionFlow — Select Index & Strike{% endblock %}
+
+{% block extra_head %}
+<style>
+  .hero {
+    text-align: center; padding: 3rem 1rem 2rem;
+    position: relative;
+  }
+  .hero-eyebrow {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.65rem; letter-spacing: 0.25em;
+    text-transform: uppercase; color: var(--accent);
+    opacity: 0.7; margin-bottom: 0.75rem;
+  }
+  .hero-title {
+    font-family: 'Orbitron', monospace;
+    font-size: clamp(1.8rem, 5vw, 3rem);
+    font-weight: 900; color: #fff;
+    line-height: 1.1; margin-bottom: 0.75rem;
+  }
+  .hero-title span { color: var(--accent); }
+  .hero-sub {
+    color: var(--muted); font-size: 0.85rem; max-width: 520px;
+    margin: 0 auto 2rem;
+  }
+  .selector-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem; max-width: 900px; margin: 0 auto;
+  }
+  @media (max-width: 640px) { .selector-grid { grid-template-columns: 1fr; } }
+
+  .spot-display {
+    display: flex; align-items: center; gap: 1rem;
+    padding: 1rem; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 6px;
+    margin-bottom: 1.25rem;
+  }
+  .spot-label {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.62rem; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--muted);
+  }
+  .spot-value {
+    font-family: 'Orbitron', monospace;
+    font-size: 1.4rem; font-weight: 700; color: var(--green);
+    margin-left: auto;
+  }
+  .strikes-list {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.4rem;
+    max-height: 220px; overflow-y: auto;
+    margin-top: 0.75rem;
+  }
+  .strike-btn {
+    padding: 0.4rem; text-align: center;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 3px; cursor: pointer;
+    font-family: 'Space Mono', monospace; font-size: 0.72rem;
+    color: var(--text); transition: all 0.15s;
+  }
+  .strike-btn:hover, .strike-btn.active {
+    background: rgba(0,212,255,0.15);
+    border-color: var(--accent); color: var(--accent);
+  }
+  .strike-btn.itm { border-color: rgba(0,255,136,0.3); color: var(--green); }
+  .strike-btn.itm.active { background: rgba(0,255,136,0.2); }
+  .strike-btn.otm { opacity: 0.7; }
+
+  .expiry-select-wrap { margin-top: 1.25rem; }
+
+  .loading-strikes {
+    text-align: center; padding: 2rem;
+    font-family: 'Space Mono', monospace; font-size: 0.75rem;
+    color: var(--muted);
+  }
+  .step-indicator {
+    display: flex; gap: 0; margin-bottom: 1.5rem;
+    border: 1px solid var(--border); border-radius: 4px; overflow: hidden;
+  }
+  .step {
+    flex: 1; padding: 0.5rem; text-align: center;
+    font-family: 'Space Mono', monospace; font-size: 0.62rem;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--muted); background: var(--surface);
+    border-right: 1px solid var(--border);
+    transition: all 0.3s;
+  }
+  .step:last-child { border-right: none; }
+  .step.active { background: rgba(0,212,255,0.12); color: var(--accent); }
+  .step.done { background: rgba(0,255,136,0.08); color: var(--green); }
+
+  .selected-summary {
+    background: rgba(0,212,255,0.05);
+    border: 1px solid rgba(0,212,255,0.2);
+    border-radius: 6px; padding: 1rem;
+    margin-bottom: 1.25rem;
+    font-family: 'Space Mono', monospace; font-size: 0.75rem;
+    display: none;
+  }
+  .selected-summary.visible { display: block; }
+  .summary-row { display: flex; justify-content: space-between; margin-bottom: 0.3rem; }
+  .summary-key { color: var(--muted); }
+  .summary-val { color: var(--accent); font-weight: 700; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+  <div class="hero">
+    <div class="hero-eyebrow">NSE &amp; BSE Options Intelligence</div>
+    <h1 class="hero-title">Option<span>Flow</span></h1>
+    <p class="hero-sub">Real-time options analytics — Greeks, IV Smile, Open Interest &amp; Market Sentiment in one terminal.</p>
+  </div>
+
+  {% if not yfinance_available %}
+  <div class="alert alert-error" style="max-width:700px; margin:0 auto 2rem;">
+    ⚠ <strong>yfinance not installed.</strong> Run: <code>pip install yfinance plotly pandas numpy scipy</code>
+  </div>
+  {% endif %}
+
+  <div class="step-indicator" id="stepIndicator">
+    <div class="step active" id="step1">① Select Index</div>
+    <div class="step" id="step2">② Option Type</div>
+    <div class="step" id="step3">③ Select Strike</div>
+    <div class="step" id="step4">④ Analyse</div>
+  </div>
+
+  <div class="selector-grid">
+    <!-- LEFT: Index + Type Selector -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-icon">🎯</span>
+        <span class="card-title">Contract Setup</span>
+      </div>
+
+      <div class="form-group">
+        <label>Select Index</label>
+        <select id="indexSelect">
+          {% for idx in indices %}
+          <option value="{{ idx }}">{{ idx }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Option Type</label>
+        <div class="toggle-group">
+          <input type="radio" name="optType" id="typeCall" value="call" checked>
+          <label for="typeCall">📈 Call</label>
+          <input type="radio" name="optType" id="typePut" value="put">
+          <label for="typePut">📉 Put</label>
+        </div>
+      </div>
+
+      <button class="btn btn-primary btn-full" id="fetchBtn" onclick="fetchStrikes()">
+        ⚡ Fetch Live Chain
+      </button>
+
+      <div id="spotDisplay" class="spot-display" style="display:none; margin-top:1.25rem;">
+        <div>
+          <div class="spot-label">Spot Price</div>
+          <div style="font-size:0.65rem; color:var(--muted); margin-top:0.2rem;" id="indexLabel">—</div>
+        </div>
+        <div class="spot-value" id="spotValue">—</div>
+      </div>
+
+      <div class="expiry-select-wrap" id="expiryWrap" style="display:none;">
+        <label>Expiry Date</label>
+        <select id="expirySelect" onchange="filterStrikesByExpiry()">
+          <option value="all">All Expiries</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- RIGHT: Strike Selector -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-icon">🎰</span>
+        <span class="card-title">Strike Selection</span>
+      </div>
+
+      <div id="strikesContainer">
+        <div class="loading-strikes" style="color:var(--muted);">
+          ← Fetch a live chain to see available strikes
+        </div>
+      </div>
+
+      <div class="selected-summary" id="selectedSummary">
+        <div class="summary-row"><span class="summary-key">INDEX</span><span class="summary-val" id="sumIndex">—</span></div>
+        <div class="summary-row"><span class="summary-key">TYPE</span><span class="summary-val" id="sumType">—</span></div>
+        <div class="summary-row"><span class="summary-key">STRIKE</span><span class="summary-val" id="sumStrike">—</span></div>
+        <div class="summary-row"><span class="summary-key">EXPIRY</span><span class="summary-val" id="sumExpiry">—</span></div>
+      </div>
+
+      <button class="btn btn-primary btn-full" id="analyseBtn" style="display:none; margin-top:1rem;"
+              onclick="goToAnalysis()">
+        🚀 Open Analytics Hub →
+      </button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  let allStrikes = [];
+  let allExpiries = [];
+  let selectedStrike = null;
+  let selectedExpiry = null;
+  let spotPrice = null;
+
+  async function fetchStrikes() {
+    const index   = document.getElementById('indexSelect').value;
+    const optType = document.querySelector('input[name="optType"]:checked').value;
+    const btn     = document.getElementById('fetchBtn');
+
+    btn.disabled = true;
+    btn.textContent = '⏳ Fetching...';
+    document.getElementById('strikesContainer').innerHTML =
+      '<div class="loader"><div class="loader-spinner"></div> Fetching live chain...</div>';
+
+    try {
+      const res  = await fetch(`/api/strikes/?index=${index}&type=${optType}`);
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      allStrikes  = data.strikes;
+      allExpiries = data.expiries;
+      spotPrice   = data.spot;
+
+      // Update spot display
+      document.getElementById('spotDisplay').style.display = 'flex';
+      document.getElementById('spotValue').textContent = spotPrice ? spotPrice.toLocaleString('en-IN') : '—';
+      document.getElementById('indexLabel').textContent = index;
+
+      // Populate expiry dropdown
+      const expSel = document.getElementById('expirySelect');
+      expSel.innerHTML = '<option value="all">All Expiries</option>';
+      allExpiries.forEach(e => {
+        const opt = document.createElement('option');
+        opt.value = e; opt.textContent = e;
+        expSel.appendChild(opt);
+      });
+      document.getElementById('expiryWrap').style.display = 'block';
+
+      renderStrikes(allStrikes);
+      setStep(2);
+    } catch (e) {
+      document.getElementById('strikesContainer').innerHTML =
+        `<div class="alert alert-error">Error: ${e.message}</div>`;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '⚡ Fetch Live Chain';
+    }
+  }
+
+  function renderStrikes(strikes) {
+    if (!strikes.length) {
+      document.getElementById('strikesContainer').innerHTML =
+        '<div class="alert alert-info">No strikes found for this selection.</div>';
+      return;
+    }
+    const optType = document.querySelector('input[name="optType"]:checked').value;
+    const spot = spotPrice || 0;
+
+    let html = '<label style="margin-bottom:0.5rem;">Available Strikes</label>';
+    html += `<div style="font-size:0.65rem; color:var(--muted); font-family:\'Space Mono\',monospace; margin-bottom:0.5rem;">${strikes.length} strikes loaded</div>`;
+    html += '<div class="strikes-list" id="strikeList">';
+
+    strikes.forEach(s => {
+      let cls = '';
+      if (optType === 'call') cls = s <= spot ? 'itm' : 'otm';
+      else cls = s >= spot ? 'itm' : 'otm';
+      html += `<div class="strike-btn ${cls}" onclick="selectStrike(${s})" id="strike-${s}">${s.toLocaleString('en-IN')}</div>`;
+    });
+    html += '</div>';
+    document.getElementById('strikesContainer').innerHTML = html;
+  }
+
+  function filterStrikesByExpiry() {
+    selectedExpiry = document.getElementById('expirySelect').value;
+    if (selectedExpiry === 'all') selectedExpiry = null;
+    renderStrikes(allStrikes);
+    if (selectedStrike) selectStrike(selectedStrike);
+  }
+
+  function selectStrike(s) {
+    selectedStrike = s;
+    selectedExpiry = document.getElementById('expirySelect').value;
+    if (selectedExpiry === 'all') selectedExpiry = allExpiries[0] || null;
+
+    // Highlight
+    document.querySelectorAll('.strike-btn').forEach(b => b.classList.remove('active'));
+    const el = document.getElementById(`strike-${s}`);
+    if (el) el.classList.add('active');
+
+    const index   = document.getElementById('indexSelect').value;
+    const optType = document.querySelector('input[name="optType"]:checked').value;
+
+    // Show summary
+    document.getElementById('sumIndex').textContent  = index;
+    document.getElementById('sumType').textContent   = optType.toUpperCase();
+    document.getElementById('sumStrike').textContent = s.toLocaleString('en-IN');
+    document.getElementById('sumExpiry').textContent = selectedExpiry || allExpiries[0] || '—';
+    document.getElementById('selectedSummary').classList.add('visible');
+    document.getElementById('analyseBtn').style.display = 'flex';
+    setStep(3);
+  }
+
+  function goToAnalysis() {
+    if (!selectedStrike) return;
+    const index   = document.getElementById('indexSelect').value;
+    const optType = document.querySelector('input[name="optType"]:checked').value;
+    const expiry  = selectedExpiry || allExpiries[0] || '';
+    const url = `/analysis/?index=${index}&type=${optType}&strike=${selectedStrike}&expiry=${expiry}`;
+    window.location.href = url;
+  }
+
+  function setStep(n) {
+    for (let i = 1; i <= 4; i++) {
+      const el = document.getElementById(`step${i}`);
+      el.className = 'step' + (i < n ? ' done' : i === n ? ' active' : '');
+    }
+  }
+</script>
+{% endblock %}

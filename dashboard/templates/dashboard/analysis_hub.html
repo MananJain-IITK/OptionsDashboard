@@ -1,0 +1,209 @@
+{% extends 'dashboard/base.html' %}
+{% block title %}OptionFlow — Analytics Hub{% endblock %}
+
+{% block extra_head %}
+<style>
+  .hub-header {
+    padding: 2rem 0 1.5rem;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 2rem;
+    display: flex; align-items: flex-start; justify-content: space-between;
+    flex-wrap: wrap; gap: 1rem;
+  }
+  .hub-title {
+    font-family: 'Orbitron', monospace;
+    font-size: 1.5rem; font-weight: 900; color: #fff;
+  }
+  .hub-title span { color: var(--accent); }
+  .hub-meta {
+    display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center;
+    margin-top: 0.5rem;
+  }
+  .meta-chip {
+    padding: 0.25rem 0.65rem;
+    border: 1px solid var(--border); border-radius: 3px;
+    font-family: 'Space Mono', monospace; font-size: 0.65rem;
+    color: var(--text); background: var(--surface);
+  }
+  .meta-chip span { color: var(--accent); }
+
+  .modules-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1.5rem;
+  }
+  @media (max-width: 768px) { .modules-grid { grid-template-columns: 1fr; } }
+
+  .module-card {
+    position: relative; overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--card);
+    padding: 2rem;
+    cursor: pointer;
+    transition: all 0.25s;
+    text-decoration: none; color: inherit;
+    display: block;
+  }
+  .module-card:hover {
+    border-color: var(--accent);
+    box-shadow: 0 0 30px rgba(0,212,255,0.1);
+    transform: translateY(-2px);
+  }
+  .module-card.placeholder {
+    cursor: default; opacity: 0.6;
+  }
+  .module-card.placeholder:hover {
+    transform: none;
+    border-color: var(--border);
+    box-shadow: none;
+  }
+  .module-card::after {
+    content: '';
+    position: absolute; top: 0; right: 0;
+    width: 120px; height: 120px;
+    border-radius: 50%;
+    opacity: 0.05;
+    transition: opacity 0.25s;
+  }
+  .module-card:hover::after { opacity: 0.1; }
+  .m-oi::after   { background: var(--gold);   right: -30px; top: -30px; }
+  .m-gr::after   { background: var(--accent);  right: -30px; top: -30px; }
+  .m-iv::after   { background: var(--purple);  right: -30px; top: -30px; }
+  .m-ms::after   { background: var(--green);   right: -30px; top: -30px; }
+
+  .module-icon {
+    font-size: 2.5rem; margin-bottom: 1rem; display: block;
+  }
+  .module-name {
+    font-family: 'Orbitron', monospace;
+    font-size: 1rem; font-weight: 700; color: #fff;
+    margin-bottom: 0.4rem;
+  }
+  .module-desc {
+    font-size: 0.8rem; color: var(--muted); line-height: 1.5;
+    margin-bottom: 1rem;
+  }
+  .module-tags { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+  .module-tag {
+    font-family: 'Space Mono', monospace; font-size: 0.6rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 2px;
+    letter-spacing: 0.08em;
+  }
+  .tag-cyan   { background: rgba(0,212,255,0.1);  color: var(--accent);  border: 1px solid rgba(0,212,255,0.2); }
+  .tag-gold   { background: rgba(255,215,0,0.1);  color: var(--gold);    border: 1px solid rgba(255,215,0,0.2); }
+  .tag-purple { background: rgba(168,85,247,0.1); color: var(--purple);  border: 1px solid rgba(168,85,247,0.2); }
+  .tag-green  { background: rgba(0,255,136,0.1);  color: var(--green);   border: 1px solid rgba(0,255,136,0.2); }
+  .tag-muted  { background: rgba(74,85,104,0.3);  color: var(--muted);   border: 1px solid var(--border); }
+
+  .module-cta {
+    margin-top: 1.25rem;
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    font-family: 'Space Mono', monospace; font-size: 0.7rem;
+    font-weight: 700; letter-spacing: 0.1em;
+    color: var(--accent);
+  }
+  .module-cta.disabled { color: var(--muted); }
+
+  .placeholder-badge {
+    position: absolute; top: 1rem; right: 1rem;
+    background: rgba(74,85,104,0.4);
+    border: 1px solid var(--border);
+    border-radius: 3px; padding: 0.2rem 0.5rem;
+    font-family: 'Space Mono', monospace;
+    font-size: 0.6rem; color: var(--muted);
+    letter-spacing: 0.1em;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+  <div class="hub-header">
+    <div>
+      <div class="hub-title">Analytics <span>Hub</span></div>
+      <div class="hub-meta">
+        <div class="meta-chip">INDEX: <span>{{ index }}</span></div>
+        <div class="meta-chip">TYPE: <span>{{ opt_type|upper }}</span></div>
+        <div class="meta-chip">STRIKE: <span>{{ strike }}</span></div>
+        <div class="meta-chip">EXPIRY: <span>{{ expiry }}</span></div>
+      </div>
+    </div>
+    <a href="/" class="btn btn-outline">← Change Contract</a>
+  </div>
+
+  <div class="modules-grid">
+
+    <!-- Open Interest Analytics — PLACEHOLDER -->
+    <div class="module-card m-oi placeholder">
+      <div class="placeholder-badge">COMING SOON</div>
+      <span class="module-icon">📊</span>
+      <div class="module-name">Open Interest Analytics</div>
+      <div class="module-desc">
+        PCR ratio tracking, OI buildup / unwinding, Put-Call OI heatmaps, support &amp; resistance via max-pain theory.
+      </div>
+      <div class="module-tags">
+        <span class="module-tag tag-gold">PCR</span>
+        <span class="module-tag tag-gold">OI HEATMAP</span>
+        <span class="module-tag tag-gold">MAX PAIN</span>
+        <span class="module-tag tag-muted">PLACEHOLDER</span>
+      </div>
+      <div class="module-cta disabled">🔒 In Development →</div>
+    </div>
+
+    <!-- Greeks Calculator — LIVE -->
+    <a class="module-card m-gr"
+       href="/greeks/?index={{ index }}&type={{ opt_type }}&strike={{ strike }}&expiry={{ expiry }}">
+      <span class="module-icon">🧮</span>
+      <div class="module-name">Option Greeks</div>
+      <div class="module-desc">
+        Real-time Δ Delta, Γ Gamma, Θ Theta, ν Vega, ρ Rho from Black-Scholes. Interactive sensitivity curves across spot price.
+      </div>
+      <div class="module-tags">
+        <span class="module-tag tag-cyan">DELTA</span>
+        <span class="module-tag tag-cyan">GAMMA</span>
+        <span class="module-tag tag-cyan">THETA</span>
+        <span class="module-tag tag-cyan">VEGA</span>
+        <span class="module-tag tag-cyan">RHO</span>
+      </div>
+      <div class="module-cta">⚡ Open Calculator →</div>
+    </a>
+
+    <!-- IV Smile — LIVE -->
+    <a class="module-card m-iv"
+       href="/iv-smile/?index={{ index }}&type={{ opt_type }}&strike={{ strike }}&expiry={{ expiry }}">
+      <span class="module-icon">📐</span>
+      <div class="module-name">IV Smile &amp; Surface</div>
+      <div class="module-desc">
+        3D Implied Volatility surface (IV vs Spot vs Time). Smile skew across strikes per expiry using live yfinance data &amp; Plotly.
+      </div>
+      <div class="module-tags">
+        <span class="module-tag tag-purple">IV SMILE</span>
+        <span class="module-tag tag-purple">3D SURFACE</span>
+        <span class="module-tag tag-purple">SKEW</span>
+        <span class="module-tag tag-purple">TERM STRUCT</span>
+      </div>
+      <div class="module-cta">🔭 Open IV Plotter →</div>
+    </a>
+
+    <!-- Market Sentiment — PLACEHOLDER -->
+    <div class="module-card m-ms placeholder">
+      <div class="placeholder-badge">COMING SOON</div>
+      <span class="module-icon">🧭</span>
+      <div class="module-name">Market Sentiment</div>
+      <div class="module-desc">
+        VIX trend analysis, fear &amp; greed index, options flow sentiment, directional bias from institutional activity.
+      </div>
+      <div class="module-tags">
+        <span class="module-tag tag-green">VIX</span>
+        <span class="module-tag tag-green">FEAR/GREED</span>
+        <span class="module-tag tag-green">FLOW</span>
+        <span class="module-tag tag-muted">PLACEHOLDER</span>
+      </div>
+      <div class="module-cta disabled">🔒 In Development →</div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}

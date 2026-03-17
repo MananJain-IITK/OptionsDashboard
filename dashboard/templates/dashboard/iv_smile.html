@@ -1,0 +1,385 @@
+{% extends 'dashboard/base.html' %}
+{% block title %}OptionFlow — IV Smile & 3D Surface{% endblock %}
+
+{% block extra_head %}
+<style>
+  .page-header {
+    padding: 1.5rem 0 1rem;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 1.5rem;
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 0.75rem;
+  }
+  .page-title {
+    font-family: 'Orbitron', monospace;
+    font-size: 1.25rem; font-weight: 900; color: #fff;
+  }
+  .page-title span { color: var(--purple); }
+  .breadcrumb {
+    font-family: 'Space Mono', monospace; font-size: 0.65rem;
+    color: var(--muted); margin-bottom: 0.25rem;
+  }
+
+  .iv-layout { display: grid; grid-template-columns: 280px 1fr; gap: 1.5rem; }
+  @media (max-width: 900px) { .iv-layout { grid-template-columns: 1fr; } }
+
+  .view-tabs {
+    display: flex; gap: 0;
+    border: 1px solid var(--border);
+    border-radius: 4px; overflow: hidden;
+    margin-bottom: 1.25rem;
+  }
+  .view-tab {
+    flex: 1; padding: 0.6rem;
+    background: var(--surface); border: none;
+    font-family: 'Space Mono', monospace; font-size: 0.68rem;
+    font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--muted); cursor: pointer; transition: all 0.2s;
+  }
+  .view-tab.active { background: var(--purple); color: #fff; }
+
+  .chart-big { height: 480px; }
+  .chart-med { height: 340px; }
+  .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; margin-bottom: 1rem; }
+  .info-box {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 4px; padding: 0.75rem; text-align: center;
+  }
+  .info-lbl { font-family: 'Space Mono', monospace; font-size: 0.6rem; color: var(--muted); margin-bottom: 0.2rem; text-transform: uppercase; letter-spacing: 0.1em; }
+  .info-val { font-family: 'Orbitron', monospace; font-size: 1rem; font-weight: 700; color: var(--purple); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+  <div class="page-header">
+    <div>
+      <div class="breadcrumb">
+        <a href="/" style="color:var(--muted);text-decoration:none;">Home</a>
+        › <a href="/analysis/?index={{ index }}&type={{ opt_type }}&strike={{ strike }}&expiry={{ expiry }}"
+             style="color:var(--muted);text-decoration:none;">Hub</a> › IV Smile &amp; Surface
+      </div>
+      <div class="page-title">IV Smile <span>&amp; 3D Surface</span></div>
+    </div>
+    <a href="/analysis/?index={{ index }}&type={{ opt_type }}&strike={{ strike }}&expiry={{ expiry }}"
+       class="btn btn-outline">← Back to Hub</a>
+  </div>
+
+  <div class="iv-layout">
+    <!-- LEFT: Controls -->
+    <div>
+      <div class="card" style="margin-bottom:1.25rem;">
+        <div class="card-header">
+          <span class="card-icon">🔭</span>
+          <span class="card-title">IV Settings</span>
+        </div>
+
+        <div class="form-group">
+          <label>Index</label>
+          <select id="ivIndex">
+            {% for idx in indices %}
+            <option value="{{ idx }}" {% if idx == index %}selected{% endif %}>{{ idx }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Option Type</label>
+          <div class="toggle-group">
+            <input type="radio" name="ivType" id="ivCall" value="call" {% if opt_type == 'call' %}checked{% endif %}>
+            <label for="ivCall">Call</label>
+            <input type="radio" name="ivType" id="ivPut" value="put" {% if opt_type == 'put' %}checked{% endif %}>
+            <label for="ivPut">Put</label>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Selected Strike</label>
+          <input type="number" id="ivStrike" value="{{ strike }}" step="50">
+        </div>
+        <div class="form-group">
+          <label>Expiry (for Smile)</label>
+          <input type="text" id="ivExpiry" value="{{ expiry }}" placeholder="YYYY-MM-DD">
+        </div>
+
+        <div class="view-tabs" style="margin-top:0.5rem;">
+          <button class="view-tab active" onclick="switchView('smile', this)">IV Smile</button>
+          <button class="view-tab" onclick="switchView('surface', this)">3D Surface</button>
+          <button class="view-tab" onclick="switchView('term', this)">Term Struct</button>
+        </div>
+
+        <button class="btn btn-primary btn-full" id="ivFetchBtn" onclick="loadIVData()">
+          🔭 Plot IV Charts
+        </button>
+      </div>
+
+      <div class="card" id="ivInfoCard" style="display:none;">
+        <div class="card-header">
+          <span class="card-icon">📊</span>
+          <span class="card-title">IV Metrics</span>
+        </div>
+        <div class="info-grid" id="ivInfoGrid"></div>
+      </div>
+    </div>
+
+    <!-- RIGHT: Charts -->
+    <div>
+      <div id="ivLoading" style="display:none;" class="loader">
+        <div class="loader-spinner"></div> Loading IV data from yfinance…
+      </div>
+      <div id="ivError" style="display:none;"></div>
+
+      <!-- IV Smile -->
+      <div id="viewSmile">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-icon">📐</span>
+            <span class="card-title">IV Smile — Strike vs IV%</span>
+          </div>
+          <div id="chartSmile" class="chart-big"></div>
+          <div id="chartMoneyness" class="chart-med" style="margin-top:1rem;"></div>
+        </div>
+      </div>
+
+      <!-- 3D Surface -->
+      <div id="viewSurface" style="display:none;">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-icon">🌐</span>
+            <span class="card-title">IV Surface — Strike × Time × IV%</span>
+          </div>
+          <div id="chart3D" class="chart-big"></div>
+        </div>
+      </div>
+
+      <!-- Term Structure -->
+      <div id="viewTerm" style="display:none;">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-icon">📅</span>
+            <span class="card-title">IV Term Structure — Selected Strike Across Expiries</span>
+          </div>
+          <div id="chartTerm" class="chart-big"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let currentView = 'smile';
+
+function switchView(view, btn) {
+  currentView = view;
+  ['smile','surface','term'].forEach(v => {
+    document.getElementById('view' + v.charAt(0).toUpperCase() + v.slice(1)).style.display = 'none';
+  });
+  document.getElementById('view' + view.charAt(0).toUpperCase() + view.slice(1)).style.display = 'block';
+  document.querySelectorAll('.view-tab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+async function loadIVData() {
+  const index  = document.getElementById('ivIndex').value;
+  const type   = document.querySelector('input[name="ivType"]:checked').value;
+  const strike = document.getElementById('ivStrike').value;
+  const expiry = document.getElementById('ivExpiry').value;
+
+  document.getElementById('ivLoading').style.display = 'flex';
+  document.getElementById('ivError').style.display = 'none';
+  const btn = document.getElementById('ivFetchBtn');
+  btn.disabled = true; btn.textContent = '⏳ Fetching...';
+
+  try {
+    if (currentView === 'smile') {
+      await loadSmile(index, type, expiry);
+    } else if (currentView === 'surface') {
+      await loadSurface(index, type, strike);
+    } else {
+      await loadTermStructure(index, type, strike);
+    }
+  } catch (e) {
+    document.getElementById('ivError').innerHTML =
+      `<div class="alert alert-error" style="margin-bottom:1rem;">⚠ ${e.message}</div>`;
+    document.getElementById('ivError').style.display = 'block';
+  } finally {
+    document.getElementById('ivLoading').style.display = 'none';
+    btn.disabled = false; btn.textContent = '🔭 Plot IV Charts';
+  }
+}
+
+async function loadSmile(index, type, expiry) {
+  const res  = await fetch(`/api/iv-smile-data/?index=${index}&type=${type}&expiry=${expiry}`);
+  const data = await res.json();
+  if (data.error) throw new Error(data.error);
+
+  const atm_iv = data.ivs.reduce((best, iv, i) => {
+    return Math.abs(data.strikes[i] - data.spot) < Math.abs(data.strikes[best] - data.spot) ? i : best;
+  }, 0);
+
+  // Strike vs IV
+  const smileLayout = {
+    ...PLOTLY_LAYOUT_BASE,
+    title: { text: `IV Smile — ${index} ${type.toUpperCase()} | ${expiry}`, font:{color:'#c8d8f0',size:13} },
+    xaxis: { ...PLOTLY_LAYOUT_BASE.xaxis, title: 'Strike' },
+    yaxis: { ...PLOTLY_LAYOUT_BASE.yaxis, title: 'Implied Volatility (%)' },
+  };
+  Plotly.newPlot('chartSmile', [
+    {
+      x: data.strikes, y: data.ivs,
+      type: 'scatter', mode: 'lines+markers',
+      line: { color: '#a855f7', width: 2.5 },
+      marker: { color: data.ivs, colorscale: [[0,'#00d4ff'],[0.5,'#a855f7'],[1,'#ff4466']],
+                size: 7, showscale: false },
+      name: 'IV%',
+      hovertemplate: 'Strike: %{x}<br>IV: %{y:.2f}%<extra></extra>',
+    },
+    {
+      x: [data.spot, data.spot], y: [Math.min(...data.ivs)*0.98, Math.max(...data.ivs)*1.02],
+      type: 'scatter', mode: 'lines',
+      line: { color: '#00ff88', width: 1.5, dash: 'dot' },
+      name: 'Spot',
+    },
+  ], smileLayout, PLOTLY_CONFIG);
+
+  // Moneyness chart
+  const moneynessLayout = {
+    ...PLOTLY_LAYOUT_BASE,
+    title: { text: 'IV vs Moneyness (K/S)', font:{color:'#c8d8f0',size:13} },
+    xaxis: { ...PLOTLY_LAYOUT_BASE.xaxis, title: 'Moneyness (K/Spot)' },
+    yaxis: { ...PLOTLY_LAYOUT_BASE.yaxis, title: 'IV%' },
+  };
+  Plotly.newPlot('chartMoneyness', [
+    {
+      x: data.moneyness, y: data.ivs,
+      type: 'scatter', mode: 'lines+markers',
+      line: { color: '#00d4ff', width: 2 },
+      marker: { color: '#a855f7', size: 6 },
+      name: 'IV%',
+      fill: 'tozeroy', fillcolor: 'rgba(168,85,247,0.06)',
+    },
+    { x: [1, 1], y: [Math.min(...data.ivs)*0.95, Math.max(...data.ivs)*1.05],
+      type:'scatter', mode:'lines', line:{color:'#ffd700', width:1, dash:'dash'}, name:'ATM' },
+  ], moneynessLayout, PLOTLY_CONFIG);
+
+  // Metrics
+  document.getElementById('ivInfoCard').style.display = 'block';
+  document.getElementById('ivInfoGrid').innerHTML = `
+    <div class="info-box"><div class="info-lbl">ATM IV</div><div class="info-val">${data.ivs[atm_iv].toFixed(2)}%</div></div>
+    <div class="info-box"><div class="info-lbl">Min IV</div><div class="info-val" style="color:var(--green);">${Math.min(...data.ivs).toFixed(2)}%</div></div>
+    <div class="info-box"><div class="info-lbl">Max IV</div><div class="info-val" style="color:var(--red);">${Math.max(...data.ivs).toFixed(2)}%</div></div>
+    <div class="info-box"><div class="info-lbl">Spot</div><div class="info-val" style="color:var(--accent);">${data.spot.toLocaleString('en-IN')}</div></div>
+  `;
+}
+
+async function loadSurface(index, type, strike) {
+  const res  = await fetch(`/api/iv-surface-data/?index=${index}&type=${type}&strike=${strike}`);
+  const data = await res.json();
+  if (data.error) throw new Error(data.error);
+
+  const surface = data.surface;
+  if (!surface.length) throw new Error('No surface data available');
+
+  // Pivot for 3D
+  const expiries  = [...new Set(surface.map(d => d.expiry))].sort();
+  const strikesU  = [...new Set(surface.map(d => d.strike))].sort((a,b)=>a-b);
+  const zMatrix   = expiries.map(exp => {
+    return strikesU.map(st => {
+      const pt = surface.find(d => d.expiry === exp && d.strike === st);
+      return pt ? pt.iv : null;
+    });
+  });
+
+  const layout3d = {
+    ...PLOTLY_LAYOUT_BASE,
+    title: { text: `IV Surface — ${index} ${type.toUpperCase()}`, font:{color:'#c8d8f0',size:13} },
+    scene: {
+      xaxis: { title: 'Strike', gridcolor:'#1a2235', zerolinecolor:'#1a2235', backgroundcolor:'rgba(11,15,26,0.8)' },
+      yaxis: { title: 'Expiry', gridcolor:'#1a2235', zerolinecolor:'#1a2235', backgroundcolor:'rgba(11,15,26,0.8)', tickangle: -45 },
+      zaxis: { title: 'IV%', gridcolor:'#1a2235', zerolinecolor:'#1a2235', backgroundcolor:'rgba(11,15,26,0.8)' },
+      bgcolor: 'rgba(11,15,26,0.9)',
+    },
+    margin: { t:50, b:20, l:20, r:20 },
+  };
+
+  Plotly.newPlot('chart3D', [{
+    type: 'surface',
+    x: strikesU,
+    y: expiries,
+    z: zMatrix,
+    colorscale: [
+      [0,   '#00d4ff'],
+      [0.25,'#a855f7'],
+      [0.5, '#ff4466'],
+      [0.75,'#ffd700'],
+      [1,   '#ffffff'],
+    ],
+    opacity: 0.9,
+    contours: {
+      z: { show: true, usecolormap: true, highlightcolor: '#fff', project: { z: true } }
+    },
+    hovertemplate: 'Strike: %{x}<br>Expiry: %{y}<br>IV: %{z:.2f}%<extra></extra>',
+  }], layout3d, PLOTLY_CONFIG);
+
+  document.getElementById('ivInfoCard').style.display = 'block';
+  document.getElementById('ivInfoGrid').innerHTML = `
+    <div class="info-box"><div class="info-lbl">Expiries</div><div class="info-val">${expiries.length}</div></div>
+    <div class="info-box"><div class="info-lbl">Strikes</div><div class="info-val">${strikesU.length}</div></div>
+    <div class="info-box"><div class="info-lbl">Spot</div><div class="info-val" style="color:var(--green);">${data.spot.toLocaleString('en-IN')}</div></div>
+    <div class="info-box"><div class="info-lbl">Sel. Strike</div><div class="info-val" style="color:var(--purple);">${data.selected_strike.toLocaleString('en-IN')}</div></div>
+  `;
+}
+
+async function loadTermStructure(index, type, strike) {
+  const res  = await fetch(`/api/iv-surface-data/?index=${index}&type=${type}&strike=${strike}`);
+  const data = await res.json();
+  if (data.error) throw new Error(data.error);
+
+  const series = data.strike_series;
+  if (!series.length) throw new Error('No term structure data available');
+
+  const termLayout = {
+    ...PLOTLY_LAYOUT_BASE,
+    title: { text: `IV Term Structure — ${index} Strike ${data.selected_strike} ${type.toUpperCase()}`, font:{color:'#c8d8f0',size:13} },
+    xaxis: { ...PLOTLY_LAYOUT_BASE.xaxis, title: 'Days to Expiry' },
+    yaxis: { ...PLOTLY_LAYOUT_BASE.yaxis, title: 'Implied Volatility (%)' },
+  };
+
+  Plotly.newPlot('chartTerm', [
+    {
+      x: series.map(s=>s.T_days),
+      y: series.map(s=>s.iv),
+      text: series.map(s=>s.expiry),
+      type: 'scatter', mode: 'lines+markers+text',
+      line: { color: '#a855f7', width: 2.5 },
+      marker: { color: series.map(s=>s.iv),
+                colorscale: [[0,'#00d4ff'],[1,'#ff4466']],
+                size: 10, showscale: true,
+                colorbar: { title: 'IV%', titlefont:{color:'#c8d8f0'}, tickfont:{color:'#c8d8f0'} }},
+      textposition: 'top center',
+      textfont: { size: 8, color: '#4a5568' },
+      hovertemplate: 'Expiry: %{text}<br>DTE: %{x}<br>IV: %{y:.2f}%<extra></extra>',
+      name: 'IV Term Structure',
+      fill: 'tozeroy', fillcolor: 'rgba(168,85,247,0.06)',
+    },
+  ], termLayout, PLOTLY_CONFIG);
+
+  document.getElementById('ivInfoCard').style.display = 'block';
+  document.getElementById('ivInfoGrid').innerHTML = `
+    <div class="info-box"><div class="info-lbl">Near IV</div><div class="info-val" style="color:var(--red);">${series[0].iv.toFixed(2)}%</div></div>
+    <div class="info-box"><div class="info-lbl">Far IV</div><div class="info-val" style="color:var(--green);">${series[series.length-1].iv.toFixed(2)}%</div></div>
+    <div class="info-box"><div class="info-lbl">Contango</div>
+      <div class="info-val" style="color:${series[series.length-1].iv > series[0].iv ? 'var(--green)' : 'var(--red)'};">
+        ${series[series.length-1].iv > series[0].iv ? '▲ Yes' : '▼ No'}
+      </div>
+    </div>
+    <div class="info-box"><div class="info-lbl">Expiries</div><div class="info-val">${series.length}</div></div>
+  `;
+}
+
+// Auto-load smile on page load
+window.addEventListener('DOMContentLoaded', () => {
+  if ('{{ expiry }}') loadIVData();
+});
+</script>
+{% endblock %}
