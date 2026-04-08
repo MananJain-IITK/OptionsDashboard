@@ -1,0 +1,23 @@
+.env
+.vscode/
+temp/
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+env/
+
+# --- JSON Cache ---
+# Ignore all JSON files in a specific cache directory
+/cache/*.json
+/data/cache/*.json
+
+# Ignore temporary/cache folders
+.cache/
+tmp/
+temp/
+
+# Ignore specific API response caches
+api-cache.json
+results.json
+**/cache/*.json
