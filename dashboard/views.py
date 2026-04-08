@@ -314,6 +314,147 @@ def _safe_val(row, col):
         return None
 
 
+def _get_prev_row(df):
+    if df is None or len(df) < 2:
+        return {}
+    row = df.iloc[-2]
+    return {k: _safe_val(row, k) for k in ('close', 'open_interest', 'volume')}
+
+
+def _calc_change(current, previous):
+    if current is None or previous is None:
+        return None
+    return round(current - previous, 4)
+
+
+def _classify_oi_signal(price_change, oi_change):
+    if price_change is None or oi_change is None:
+        return 'neutral'
+    if price_change > 0 and oi_change > 0:
+        return 'long_buildup'
+    if price_change < 0 and oi_change > 0:
+        return 'short_buildup'
+    if price_change > 0 and oi_change < 0:
+        return 'short_covering'
+    if price_change < 0 and oi_change < 0:
+        return 'long_unwinding'
+    return 'neutral'
+
+
+def _max_pain_for_chain(rows):
+    strikes = [row['strike'] for row in rows]
+    min_pain = None
+    max_pain_strike = None
+
+    for settlement in strikes:
+        total_pain = 0.0
+        for row in rows:
+            call_oi = row.get('call_oi') or 0
+            put_oi = row.get('put_oi') or 0
+            strike = row['strike']
+            total_pain += max(0, settlement - strike) * call_oi
+            total_pain += max(0, strike - settlement) * put_oi
+        if min_pain is None or total_pain < min_pain:
+            min_pain = total_pain
+            max_pain_strike = settlement
+
+    return round(max_pain_strike, 2) if max_pain_strike is not None else None
+
+
+def _build_open_interest_snapshot(expiry):
+    chain_map = _scan_data_folder()
+    if expiry not in chain_map:
+        raise ValueError(f'No data found for expiry {expiry}')
+
+    calls = chain_map[expiry].get('call', {})
+    puts = chain_map[expiry].get('put', {})
+    strikes = sorted(set(calls.keys()) | set(puts.keys()))
+    if not strikes:
+        raise ValueError(f'No option files found for expiry {expiry}')
+
+    rows = []
+    timestamps = []
+    for strike in strikes:
+        entry = {'strike': strike}
+
+        for opt_type, files in (('call', calls), ('put', puts)):
+            fpath = files.get(strike)
+            latest = {}
+            prev = {}
+            ref_dt = None
+            if fpath:
+                df = _load_csv(fpath)
+                latest = _get_latest_row(df)
+                prev = _get_prev_row(df)
+                ref_dt = _get_ref_dt(df)
+                if ref_dt is not None:
+                    timestamps.append(ref_dt)
+
+            price = latest.get('close')
+            oi = latest.get('open_interest')
+            volume = latest.get('volume')
+            prev_price = prev.get('close')
+            prev_oi = prev.get('open_interest')
+
+            price_change = _calc_change(price, prev_price)
+            oi_change = _calc_change(oi, prev_oi)
+
+            entry[f'{opt_type}_ltp'] = price
+            entry[f'{opt_type}_oi'] = oi
+            entry[f'{opt_type}_volume'] = volume
+            entry[f'{opt_type}_price_change'] = price_change
+            entry[f'{opt_type}_oi_change'] = oi_change
+            entry[f'{opt_type}_signal'] = _classify_oi_signal(price_change, oi_change)
+
+        rows.append(entry)
+
+    rows = [row for row in rows if (row.get('call_oi') or row.get('put_oi'))]
+    if not rows:
+        raise ValueError(f'No open interest values found for expiry {expiry}')
+
+    total_call_oi = sum((row.get('call_oi') or 0) for row in rows)
+    total_put_oi = sum((row.get('put_oi') or 0) for row in rows)
+    total_call_change = sum((row.get('call_oi_change') or 0) for row in rows)
+    total_put_change = sum((row.get('put_oi_change') or 0) for row in rows)
+    total_call_volume = sum((row.get('call_volume') or 0) for row in rows)
+    total_put_volume = sum((row.get('put_volume') or 0) for row in rows)
+
+    support_levels = sorted(rows, key=lambda row: row.get('put_oi') or 0, reverse=True)[:3]
+    resistance_levels = sorted(rows, key=lambda row: row.get('call_oi') or 0, reverse=True)[:3]
+    active_rows = sorted(
+        rows,
+        key=lambda row: abs(row.get('call_oi_change') or 0) + abs(row.get('put_oi_change') or 0),
+        reverse=True,
+    )[:8]
+
+    ref_dt = max(timestamps) if timestamps else None
+    spot = _get_spot_from_underlying(as_of_dt=ref_dt) or _get_spot_from_underlying()
+
+    return {
+        'expiry': expiry,
+        'spot': spot,
+        'as_of': ref_dt.strftime('%Y-%m-%d %H:%M:%S') if ref_dt is not None else None,
+        'pcr': round(total_put_oi / total_call_oi, 4) if total_call_oi else None,
+        'total_call_oi': round(total_call_oi, 2),
+        'total_put_oi': round(total_put_oi, 2),
+        'total_call_change': round(total_call_change, 2),
+        'total_put_change': round(total_put_change, 2),
+        'total_call_volume': round(total_call_volume, 2),
+        'total_put_volume': round(total_put_volume, 2),
+        'max_pain': _max_pain_for_chain(rows),
+        'support_levels': [
+            {'strike': row['strike'], 'oi': row.get('put_oi'), 'oi_change': row.get('put_oi_change')}
+            for row in support_levels
+        ],
+        'resistance_levels': [
+            {'strike': row['strike'], 'oi': row.get('call_oi'), 'oi_change': row.get('call_oi_change')}
+            for row in resistance_levels
+        ],
+        'active_rows': active_rows,
+        'rows': rows,
+    }
+
+
 # ─── Black-Scholes Greeks ────────────────────────────────────────────────────
 
 def black_scholes_greeks(S, K, T, r, sigma, option_type='call'):
@@ -402,6 +543,19 @@ def iv_smile(request):
         'strike':   request.GET.get('strike', ''),
         'expiry':   request.GET.get('expiry', ''),
         'indices':  ['NIFTY50'],
+    })
+
+
+def open_interest_analytics(request):
+    expiries = sorted(_scan_data_folder().keys()) if os.path.isdir(DATA_ROOT) else []
+    expiry = request.GET.get('expiry') or (expiries[0] if expiries else '')
+    return render(request, 'dashboard/open_interest.html', {
+        'index':    request.GET.get('index', 'NIFTY50'),
+        'opt_type': request.GET.get('type', 'call'),
+        'strike':   request.GET.get('strike', ''),
+        'expiry':   expiry,
+        'indices':  ['NIFTY50'],
+        'expiries': expiries,
     })
 
 
@@ -658,6 +812,18 @@ def get_iv_surface_data(request):
             'surface': surface_data, 'strike_series': strike_series,
             'spot': spot, 'selected_strike': strike_sel, 'opt_type': opt_type,
         })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@require_http_methods(["GET"])
+def get_open_interest_data(request):
+    expiry = request.GET.get('expiry')
+    if not expiry:
+        return JsonResponse({'error': 'Missing expiry'}, status=400)
+    try:
+        snapshot = _build_open_interest_snapshot(expiry)
+        return JsonResponse(snapshot)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 

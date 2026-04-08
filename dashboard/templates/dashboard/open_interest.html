@@ -1,0 +1,545 @@
+{% extends 'dashboard/base.html' %}
+{% block title %}OptionFlow - Open Interest Analytics{% endblock %}
+
+{% block extra_head %}
+<style>
+  .page-header {
+    padding: 1.5rem 0 1rem;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 1.5rem;
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 0.75rem;
+  }
+  .page-title {
+    font-family: 'Orbitron', monospace;
+    font-size: 1.25rem; font-weight: 900; color: #fff;
+  }
+  .page-title span { color: var(--gold); }
+  .breadcrumb {
+    font-family: 'Space Mono', monospace; font-size: 0.65rem;
+    color: var(--muted); margin-bottom: 0.25rem;
+  }
+
+  .oi-layout { display: grid; grid-template-columns: 300px 1fr; gap: 1.5rem; }
+  @media (max-width: 980px) { .oi-layout { grid-template-columns: 1fr; } }
+
+  .hero-metric {
+    background: linear-gradient(180deg, rgba(255,215,0,0.1), rgba(255,215,0,0.02));
+    border: 1px solid rgba(255,215,0,0.24);
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+  }
+  .hero-metric .stat-label { color: rgba(200,216,240,0.7); }
+  .hero-metric .stat-value { color: var(--gold); font-size: 1.6rem; }
+
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+  }
+  @media (max-width: 1100px) { .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 640px) { .summary-grid { grid-template-columns: 1fr; } }
+
+  .summary-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.9rem;
+  }
+  .summary-title {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.62rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 0.4rem;
+  }
+  .summary-value {
+    font-family: 'Orbitron', monospace;
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: #fff;
+  }
+  .summary-sub {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.65rem;
+    margin-top: 0.35rem;
+  }
+
+  .panel-grid {
+    display: grid;
+    grid-template-columns: 1.15fr 0.85fr;
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+  @media (max-width: 1100px) { .panel-grid { grid-template-columns: 1fr; } }
+  .panel-grid > * { min-width: 0; }
+
+  .chart-lg { height: 320px; width: 100%; }
+  .chart-md { height: 240px; width: 100%; }
+  .chart-shell {
+    width: 92%;
+    max-width: 100%;
+    margin: 0 auto;
+  }
+  @media (max-width: 768px) {
+    .chart-shell { width: 100%; }
+  }
+
+  .levels-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+  }
+  @media (max-width: 640px) { .levels-grid { grid-template-columns: 1fr; } }
+
+  .level-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.85rem;
+  }
+  .level-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.65rem;
+    font-family: 'Space Mono', monospace;
+    font-size: 0.66rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  .level-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.45rem 0;
+    border-bottom: 1px solid rgba(26,34,53,0.45);
+    font-family: 'Space Mono', monospace;
+    font-size: 0.72rem;
+  }
+  .level-row:last-child { border-bottom: none; }
+
+  .signal-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0.2rem 0.5rem;
+    font-size: 0.58rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .signal-long_buildup, .signal-short_covering {
+    color: var(--green);
+    border-color: rgba(0,255,136,0.25);
+    background: rgba(0,255,136,0.08);
+  }
+  .signal-short_buildup, .signal-long_unwinding {
+    color: var(--red);
+    border-color: rgba(255,68,102,0.25);
+    background: rgba(255,68,102,0.08);
+  }
+  .signal-neutral {
+    color: var(--muted);
+    background: rgba(74,85,104,0.18);
+  }
+
+  .table-wrap { overflow-x: auto; }
+  .panel-scroll {
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 0.35rem;
+  }
+  .panel-scroll .chart-shell,
+  .panel-scroll .stat-grid {
+    min-width: 640px;
+  }
+  @media (max-width: 768px) {
+    .panel-scroll .chart-shell,
+    .panel-scroll .stat-grid {
+      min-width: 560px;
+    }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+  <div class="page-header">
+    <div>
+      <div class="breadcrumb">
+        <a href="/" style="color:var(--muted);text-decoration:none;">Home</a>
+        > <a href="/analysis/?index={{ index }}&type={{ opt_type }}&strike={{ strike }}&expiry={{ expiry }}"
+             style="color:var(--muted);text-decoration:none;">Hub</a> > Open Interest
+      </div>
+      <div class="page-title">Open Interest <span>Analytics</span></div>
+    </div>
+    <a href="/analysis/?index={{ index }}&type={{ opt_type }}&strike={{ strike }}&expiry={{ expiry }}"
+       class="btn btn-outline">< Back to Hub</a>
+  </div>
+
+  <div class="oi-layout">
+    <div>
+      <div class="card" style="margin-bottom:1.25rem;">
+        <div class="card-header">
+          <span class="card-icon">OI</span>
+          <span class="card-title">Chain Settings</span>
+        </div>
+
+        <div class="form-group">
+          <label>Index</label>
+          <select id="oiIndex">
+            <option value="NIFTY50" selected>NIFTY50 (Local Data)</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>Expiry</label>
+          <select id="oiExpiry">
+            {% for exp in expiries %}
+            <option value="{{ exp }}" {% if exp == expiry %}selected{% endif %}>{{ exp }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <button class="btn btn-primary btn-full" id="oiFetchBtn" onclick="loadOIData()">
+          Analyze Open Interest
+        </button>
+      </div>
+
+      <div class="hero-metric">
+        <div class="stat-label">Put-Call Ratio</div>
+        <div class="stat-value" id="pcrValue">-</div>
+        <div class="summary-sub" id="pcrSignal">Waiting for chain data...</div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-icon">LVL</span>
+          <span class="card-title">Key Levels</span>
+        </div>
+        <div class="levels-grid">
+          <div class="level-card">
+            <div class="level-head" style="color:var(--green);">
+              <span>Support</span>
+              <span>Put OI</span>
+            </div>
+            <div id="supportLevels"></div>
+          </div>
+          <div class="level-card">
+            <div class="level-head" style="color:var(--red);">
+              <span>Resistance</span>
+              <span>Call OI</span>
+            </div>
+            <div id="resistanceLevels"></div>
+          </div>
+        </div>
+        <div style="margin-top:1rem;" class="section-label">Interpretation</div>
+        <div id="levelSummary" style="margin-top:0.75rem; font-size:0.78rem; color:var(--text); line-height:1.6;"></div>
+      </div>
+    </div>
+
+    <div>
+      <div id="oiLoading" style="display:none;" class="loader">
+        <div class="loader-spinner"></div> Aggregating call and put open interest from local option-chain files...
+      </div>
+      <div id="oiError" style="display:none;"></div>
+
+      <div id="oiPanel" style="display:none;">
+        <div class="summary-grid">
+          <div class="summary-card">
+            <div class="summary-title">Spot</div>
+            <div class="summary-value" id="spotValue">-</div>
+            <div class="summary-sub" id="asOfValue"></div>
+          </div>
+          <div class="summary-card">
+            <div class="summary-title">Max Pain</div>
+            <div class="summary-value" id="maxPainValue" style="color:var(--gold);">-</div>
+            <div class="summary-sub">Least aggregate expiry payout strike</div>
+          </div>
+          <div class="summary-card">
+            <div class="summary-title">Call OI Change</div>
+            <div class="summary-value" id="callChangeValue" style="color:var(--red);">-</div>
+            <div class="summary-sub" id="callVolumeValue"></div>
+          </div>
+          <div class="summary-card">
+            <div class="summary-title">Put OI Change</div>
+            <div class="summary-value" id="putChangeValue" style="color:var(--green);">-</div>
+            <div class="summary-sub" id="putVolumeValue"></div>
+          </div>
+        </div>
+
+        <div class="panel-grid">
+          <div class="card">
+            <div class="card-header">
+              <span class="card-icon">BAR</span>
+              <span class="card-title">OI Distribution By Strike</span>
+            </div>
+            <div class="panel-scroll">
+              <div class="chart-shell">
+                <div id="chartOIByStrike" class="chart-lg"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <span class="card-icon">HM</span>
+              <span class="card-title">OI Change Heatmap</span>
+            </div>
+            <div class="panel-scroll">
+              <div class="chart-shell">
+                <div id="chartOIHeatmap" class="chart-lg"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel-grid">
+          <div class="card">
+            <div class="card-header">
+              <span class="card-icon">SIG</span>
+              <span class="card-title">Top Buildup / Unwinding Strikes</span>
+            </div>
+            <div class="panel-scroll">
+              <div class="chart-shell">
+                <div id="chartSignals" class="chart-md"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <span class="card-icon">SUM</span>
+              <span class="card-title">Chain Totals</span>
+            </div>
+            <div class="panel-scroll">
+              <div class="stat-grid" id="chainTotals"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <span class="card-icon">TB</span>
+            <span class="card-title">Strike-Level Snapshot</span>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Strike</th>
+                  <th>Call OI</th>
+                  <th>Call Chg</th>
+                  <th>Put OI</th>
+                  <th>Put Chg</th>
+                  <th>Call Signal</th>
+                  <th>Put Signal</th>
+                </tr>
+              </thead>
+              <tbody id="oiTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function fmtNum(value, digits = 0) {
+  if (value == null || Number.isNaN(value)) return '-';
+  return Number(value).toLocaleString('en-IN', {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  });
+}
+
+function fmtSigned(value, digits = 0) {
+  if (value == null || Number.isNaN(value)) return '-';
+  const n = Number(value);
+  const prefix = n > 0 ? '+' : '';
+  return prefix + fmtNum(n, digits);
+}
+
+function prettySignal(signal) {
+  return (signal || 'neutral').replaceAll('_', ' ');
+}
+
+function pcrComment(pcr) {
+  if (pcr == null) return 'PCR unavailable';
+  if (pcr >= 1.2) return 'Put-heavy OI skew, market positioning is leaning defensive to bullish.';
+  if (pcr >= 0.8) return 'PCR is balanced, positioning looks two-sided around current spot.';
+  return 'Call-heavy OI skew, overhead resistance positioning is dominating.';
+}
+
+function renderLevels(targetId, levels, colorVar) {
+  const node = document.getElementById(targetId);
+  node.innerHTML = levels.map((level, idx) => `
+    <div class="level-row">
+      <span>#${idx + 1} ${fmtNum(level.strike)}</span>
+      <span style="color:${colorVar};">${fmtNum(level.oi)}</span>
+    </div>
+  `).join('') || '<div class="level-row"><span>No data</span><span>-</span></div>';
+}
+
+function renderSummary(data) {
+  document.getElementById('pcrValue').textContent = data.pcr != null ? data.pcr.toFixed(2) : '-';
+  document.getElementById('pcrSignal').textContent = pcrComment(data.pcr);
+  document.getElementById('spotValue').textContent = data.spot != null ? '₹' + fmtNum(data.spot, 2) : '-';
+  document.getElementById('asOfValue').textContent = data.as_of ? `As of ${data.as_of}` : 'Latest snapshot';
+  document.getElementById('maxPainValue').textContent = data.max_pain != null ? fmtNum(data.max_pain) : '-';
+  document.getElementById('callChangeValue').textContent = fmtSigned(data.total_call_change);
+  document.getElementById('putChangeValue').textContent = fmtSigned(data.total_put_change);
+  document.getElementById('callVolumeValue').textContent = `Vol ${fmtNum(data.total_call_volume)}`;
+  document.getElementById('putVolumeValue').textContent = `Vol ${fmtNum(data.total_put_volume)}`;
+
+  renderLevels('supportLevels', data.support_levels, 'var(--green)');
+  renderLevels('resistanceLevels', data.resistance_levels, 'var(--red)');
+
+  const topSupport = data.support_levels[0]?.strike;
+  const topResistance = data.resistance_levels[0]?.strike;
+  const maxPainText = data.max_pain != null ? fmtNum(data.max_pain) : '-';
+  document.getElementById('levelSummary').textContent =
+    `Highest put OI is clustered near ${topSupport ? fmtNum(topSupport) : '-'} while highest call OI sits near ${topResistance ? fmtNum(topResistance) : '-'}. Max pain is centered at ${maxPainText}, which gives a useful mean-reversion reference into expiry.`;
+
+  document.getElementById('chainTotals').innerHTML = `
+    <div class="stat-box"><div class="stat-label">Total Call OI</div><div class="stat-value red">${fmtNum(data.total_call_oi)}</div></div>
+    <div class="stat-box"><div class="stat-label">Total Put OI</div><div class="stat-value green">${fmtNum(data.total_put_oi)}</div></div>
+    <div class="stat-box"><div class="stat-label">Net OI Chg</div><div class="stat-value gold">${fmtSigned((data.total_put_change || 0) - (data.total_call_change || 0))}</div></div>
+    <div class="stat-box"><div class="stat-label">Tracked Strikes</div><div class="stat-value">${fmtNum(data.rows.length)}</div></div>
+  `;
+}
+
+function plotOIByStrike(data) {
+  const strikes = data.rows.map(row => row.strike);
+  const callOI = data.rows.map(row => row.call_oi || 0);
+  const putOI = data.rows.map(row => row.put_oi || 0);
+
+  const layout = {
+    ...PLOTLY_LAYOUT_BASE,
+    barmode: 'group',
+    title: { text: `Open Interest Distribution | ${data.expiry}`, font: { color:'#c8d8f0', size:13 } },
+    xaxis: { ...PLOTLY_LAYOUT_BASE.xaxis, title: 'Strike' },
+    yaxis: { ...PLOTLY_LAYOUT_BASE.yaxis, title: 'Open Interest' },
+    shapes: data.spot ? [{
+      type: 'line', x0: data.spot, x1: data.spot, y0: 0, y1: Math.max(...callOI, ...putOI) * 1.05,
+      line: { color: '#ffd700', width: 1.5, dash: 'dot' }
+    }] : [],
+  };
+
+  Plotly.newPlot('chartOIByStrike', [
+    { x: strikes, y: callOI, type: 'bar', name: 'Call OI', marker: { color: 'rgba(255,68,102,0.78)' } },
+    { x: strikes, y: putOI, type: 'bar', name: 'Put OI', marker: { color: 'rgba(0,255,136,0.78)' } },
+  ], layout, PLOTLY_CONFIG);
+}
+
+function plotOIHeatmap(data) {
+  const strikes = data.rows.map(row => row.strike);
+  const z = [
+    data.rows.map(row => row.call_oi_change || 0),
+    data.rows.map(row => row.put_oi_change || 0),
+  ];
+
+  const layout = {
+    ...PLOTLY_LAYOUT_BASE,
+    title: { text: 'Incremental OI Change', font: { color:'#c8d8f0', size:13 } },
+    xaxis: { ...PLOTLY_LAYOUT_BASE.xaxis, title: 'Strike' },
+    yaxis: { ...PLOTLY_LAYOUT_BASE.yaxis, title: '' },
+    margin: { t: 40, b: 50, l: 70, r: 20 },
+  };
+
+  Plotly.newPlot('chartOIHeatmap', [{
+    x: strikes,
+    y: ['Call OI Chg', 'Put OI Chg'],
+    z,
+    type: 'heatmap',
+    colorscale: [
+      [0, '#ff4466'],
+      [0.5, '#1a2235'],
+      [1, '#00ff88']
+    ],
+    zmid: 0,
+    hovertemplate: '%{y}<br>Strike %{x}<br>Change %{z:,.0f}<extra></extra>',
+  }], layout, PLOTLY_CONFIG);
+}
+
+function plotSignals(data) {
+  const rows = data.active_rows.slice().reverse();
+  const labels = rows.map(row => row.strike);
+  const callDelta = rows.map(row => row.call_oi_change || 0);
+  const putDelta = rows.map(row => row.put_oi_change || 0);
+
+  const layout = {
+    ...PLOTLY_LAYOUT_BASE,
+    title: { text: 'Most Active Strikes By OI Change', font: { color:'#c8d8f0', size:13 } },
+    barmode: 'relative',
+    xaxis: { ...PLOTLY_LAYOUT_BASE.xaxis, title: 'OI Change' },
+    yaxis: { ...PLOTLY_LAYOUT_BASE.yaxis, title: 'Strike' },
+    margin: { t: 40, b: 50, l: 80, r: 20 },
+  };
+
+  Plotly.newPlot('chartSignals', [
+    { x: callDelta, y: labels, type: 'bar', orientation: 'h', name: 'Call OI Chg', marker: { color: 'rgba(255,68,102,0.78)' } },
+    { x: putDelta, y: labels, type: 'bar', orientation: 'h', name: 'Put OI Chg', marker: { color: 'rgba(0,255,136,0.78)' } },
+  ], layout, PLOTLY_CONFIG);
+}
+
+function renderTable(data) {
+  document.getElementById('oiTableBody').innerHTML = data.rows.map(row => `
+    <tr>
+      <td>${fmtNum(row.strike)}</td>
+      <td>${fmtNum(row.call_oi)}</td>
+      <td style="color:${(row.call_oi_change || 0) >= 0 ? 'var(--red)' : 'var(--green)'};">${fmtSigned(row.call_oi_change)}</td>
+      <td>${fmtNum(row.put_oi)}</td>
+      <td style="color:${(row.put_oi_change || 0) >= 0 ? 'var(--green)' : 'var(--red)'};">${fmtSigned(row.put_oi_change)}</td>
+      <td><span class="signal-chip signal-${row.call_signal}">${prettySignal(row.call_signal)}</span></td>
+      <td><span class="signal-chip signal-${row.put_signal}">${prettySignal(row.put_signal)}</span></td>
+    </tr>
+  `).join('');
+}
+
+async function loadOIData() {
+  const index = document.getElementById('oiIndex').value;
+  const expiry = document.getElementById('oiExpiry').value;
+  const btn = document.getElementById('oiFetchBtn');
+
+  document.getElementById('oiLoading').style.display = 'flex';
+  document.getElementById('oiPanel').style.display = 'none';
+  document.getElementById('oiError').style.display = 'none';
+  btn.disabled = true;
+  btn.textContent = 'Analyzing...';
+
+  try {
+    const res = await fetch(`/api/open-interest-data/?index=${index}&expiry=${expiry}`);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    renderSummary(data);
+    plotOIByStrike(data);
+    plotOIHeatmap(data);
+    plotSignals(data);
+    renderTable(data);
+    document.getElementById('oiPanel').style.display = 'block';
+  } catch (e) {
+    document.getElementById('oiError').innerHTML =
+      `<div class="alert alert-error" style="margin-bottom:1rem;">${e.message}</div>`;
+    document.getElementById('oiError').style.display = 'block';
+  } finally {
+    document.getElementById('oiLoading').style.display = 'none';
+    btn.disabled = false;
+    btn.textContent = 'Analyze Open Interest';
+  }
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  if (document.getElementById('oiExpiry')?.value) loadOIData();
+});
+</script>
+{% endblock %}
